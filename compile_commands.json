@@ -1,0 +1,20 @@
+[
+    {
+        "command": "/home/bartek/.platformio/packages/toolchain-riscv/bin/riscv-wch-elf-gcc -o .pio/build/genericCH32V003F4P6/FrameworkCh32v003fun/ch32fun.o -c -std=gnu11 -Os -g -Wall -msmall-data-limit=0 -msave-restore -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -Wunused -Wuninitialized -Wno-comment -march=rv32ecxw -mabi=ilp32e -flto -static-libgcc -nostdlib -DPLATFORMIO=60117 -DCH32V003F4 -DCH32V00X -DCH32V003 -DSYSCLK_FREQ_48MHz_HSI=48000000 -DSYSCLK_FREQ_48MHZ_HSI=48000000 -D__PIO_BUILD_CH32V003FUN__ -DTARGET_MCU=CH32V003 -DMCU_PACKAGE=1 -DTARGET_MCU_LD=0 -I/home/bartek/.platformio/packages/framework-ch32v003fun/ch32fun -I/home/bartek/.platformio/packages/framework-ch32v003fun/extralibs -Isrc -Iinclude /home/bartek/.platformio/packages/framework-ch32v003fun/ch32fun/ch32fun.c",
+        "directory": "/media/bartek/LEXAR/DEV/CH32V/pilot-dron-ze-smietnika",
+        "file": "/home/bartek/.platformio/packages/framework-ch32v003fun/ch32fun/ch32fun.c",
+        "output": ".pio/build/genericCH32V003F4P6/FrameworkCh32v003fun/ch32fun.o"
+    },
+    {
+        "command": "/home/bartek/.platformio/packages/toolchain-riscv/bin/riscv-wch-elf-gcc -o .pio/build/genericCH32V003F4P6/src/main.o -c -std=gnu11 -Os -g -Wall -msmall-data-limit=0 -msave-restore -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -Wunused -Wuninitialized -Wno-comment -march=rv32ecxw -mabi=ilp32e -flto -static-libgcc -nostdlib -DPLATFORMIO=60117 -DCH32V003F4 -DCH32V00X -DCH32V003 -DSYSCLK_FREQ_48MHz_HSI=48000000 -DSYSCLK_FREQ_48MHZ_HSI=48000000 -D__PIO_BUILD_CH32V003FUN__ -DTARGET_MCU=CH32V003 -DMCU_PACKAGE=1 -DTARGET_MCU_LD=0 -Iinclude -Isrc -I/home/bartek/.platformio/packages/framework-ch32v003fun/ch32fun -I/home/bartek/.platformio/packages/framework-ch32v003fun/extralibs -Isrc -Iinclude src/main.c",
+        "directory": "/media/bartek/LEXAR/DEV/CH32V/pilot-dron-ze-smietnika",
+        "file": "src/main.c",
+        "output": ".pio/build/genericCH32V003F4P6/src/main.o"
+    },
+    {
+        "command": "/home/bartek/.platformio/packages/toolchain-riscv/bin/riscv-wch-elf-gcc -o .pio/build/genericCH32V003F4P6/src/nrf24l01.o -c -std=gnu11 -Os -g -Wall -msmall-data-limit=0 -msave-restore -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -Wunused -Wuninitialized -Wno-comment -march=rv32ecxw -mabi=ilp32e -flto -static-libgcc -nostdlib -DPLATFORMIO=60117 -DCH32V003F4 -DCH32V00X -DCH32V003 -DSYSCLK_FREQ_48MHz_HSI=48000000 -DSYSCLK_FREQ_48MHZ_HSI=48000000 -D__PIO_BUILD_CH32V003FUN__ -DTARGET_MCU=CH32V003 -DMCU_PACKAGE=1 -DTARGET_MCU_LD=0 -Iinclude -Isrc -I/home/bartek/.platformio/packages/framework-ch32v003fun/ch32fun -I/home/bartek/.platformio/packages/framework-ch32v003fun/extralibs -Isrc -Iinclude src/nrf24l01.c",
+        "directory": "/media/bartek/LEXAR/DEV/CH32V/pilot-dron-ze-smietnika",
+        "file": "src/nrf24l01.c",
+        "output": ".pio/build/genericCH32V003F4P6/src/nrf24l01.o"
+    }
+]
