@@ -1,7 +1,19 @@
+#define DEBUG
+#define OLED
+
 #include "ch32fun.h"
 #include <stdio.h>
 #include "nrf24l01.h"
+#ifdef DEBUG
 #include "serial.h"
+#endif /* ifdef DEBUG */
+
+#ifdef OLED
+// Define OLED size and include library
+#define SSD1306_128X32
+#include "ssd1306_i2c.h"
+#include "ssd1306.h"
+#endif /* ifdef OLED */
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////* CONST DEFINES*///////////////////////////////////////
@@ -46,12 +58,36 @@ struct MyData data;
 
 int main() {
     SystemInit();
+
+#ifdef DEBUG
     UART_Init(115200); // Initialize UART at 115200 baudrate for printf override
     printf("Starting CH32V003 NRF24 Controller...\n");
+#endif /* ifdef DEBUG */
 
     adc_init();
     resetData();
     nrf24_device(TRANSMITTER, RESET);
+
+#ifdef OLED
+    if (!ssd1306_i2c_init()) {
+        ssd1306_init();
+        
+        ssd1306_setbuf(0);
+        ssd1306_drawstr(8, 0, "RISCy", 1);
+        ssd1306_drawstr(0, 16, "Transmitter", 1);
+        ssd1306_refresh();
+        Delay_Ms(1200);
+
+        ssd1306_setbuf(0);
+        ssd1306_drawstr(0, 0, "KOCHAC PAPIEZA", 1);
+        ssd1306_drawstr(0, 16, "Mini FPV Drone", 1);
+        ssd1306_refresh();
+        Delay_Ms(2200);
+        
+        ssd1306_setbuf(0);
+        ssd1306_refresh();
+    }
+#endif /* ifdef OLED */
 
     // Override the pipe out address to match Arduino code: 0xE8E8F0F0E1
     extern uint8_t datapipe_address[6][5];
@@ -75,27 +111,46 @@ int main() {
         uint16_t pitch_raw    = adc_get(2); // Example: PC4 (CH2)
         uint16_t roll_raw     = adc_get(4); // Example: PD3 (CH4)
         
+        data.throttle = mapJoystickValues( throttle_raw, 13, 524, 1015, 1 );
+        data.yaw      = mapJoystickValues( yaw_raw,      50, 505, 1020, 1 );
+        data.pitch    = mapJoystickValues( pitch_raw,    12, 544, 1021, 1 );
+        data.roll     = mapJoystickValues( roll_raw,     34, 522, 1020, 1 );
+        
+        data.AUX1 = (GPIOD->INDR & (1<<1)) ? 1 : 0; // Read Port D Input Data Register for pin PD1
+        data.AUX2 = (GPIOD->INDR & (1<<2)) ? 1 : 0; // Read Port D Input Data Register for pin PD2
+
+#ifdef OLED
+        // Voltage calculation (placeholder ADC channel 0 / A0 / PA2)
+        uint16_t vdiv_raw = adc_get(0); // Assuming A0 is used for voltage divider
+        float vol = ((vdiv_raw / 1024.0) * 10.0);
+        
+        char vol_str[16];
+        // Printf in minimalistic c libraries usually does not support floats. We convert to integer parts:
+        int vol_int = (int)vol;
+        int vol_frac = (int)((vol - vol_int) * 100);
+        snprintf(vol_str, sizeof(vol_str), "%d.%02dV", vol_int, vol_frac);
+
+        ssd1306_setbuf(0);
+        ssd1306_drawstr(0, 0, "Voltage:", 1);
+        ssd1306_drawstr(0, 16, vol_str, 1);
+        ssd1306_refresh();
+#endif /* ifdef OLED */
+
+#ifdef DEBUG
         printf("===   RAW VALUES   ===\n");
         printf("Throttle: %d\n", throttle_raw);
         printf("Yaw: %d\n",      yaw_raw);
         printf("Pitch: %d\n",    pitch_raw);
         printf("Roll: %d\n",     roll_raw);
         printf("======================\n");
-        
-        data.throttle = mapJoystickValues( throttle_raw, 13, 524, 1015, 1 );
-        data.yaw      = mapJoystickValues( yaw_raw,      50, 505, 1020, 1 );
-        data.pitch    = mapJoystickValues( pitch_raw,    12, 544, 1021, 1 );
-        data.roll     = mapJoystickValues( roll_raw,     34, 522, 1020, 1 );
-        
+
         printf("===  DATA VALUES   ===\n");
         printf("Throttle: %d\n", data.throttle);
         printf("Yaw: %d\n",      data.yaw);
         printf("Pitch: %d\n",    data.pitch);
         printf("Roll: %d\n",     data.roll);
         printf("======================\n");
-
-        data.AUX1 = (GPIOD->INDR & (1<<1)) ? 1 : 0; // Read Port D Input Data Register for pin PD1
-        data.AUX2 = (GPIOD->INDR & (1<<2)) ? 1 : 0; // Read Port D Input Data Register for pin PD2
+#endif /* ifdef DEBUG */
 
         nrf24_transmit((uint8_t*)&data, sizeof(struct MyData), NO_ACK_MODE);
         
