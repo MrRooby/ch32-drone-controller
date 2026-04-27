@@ -5,27 +5,25 @@
 #include "ch32fun.h"
 #include <stdio.h>
 #include "nrf24l01.h"
-
-#ifdef DEBUG
-  #include "serial.h"
-#endif /* ifdef DEBUG */
-
-#ifdef OLED
-  // Define OLED size and include library
-  #define SSD1306_128X32
-  #include "ssd1306_i2c.h"
-  #include "ssd1306.h"
-#endif /* ifdef OLED */
-
-#ifdef NRF24
-  #include "transmitter.h"
-#endif /* ifdef NRF24 */
-
+#include "serial.h"
+#include "ssd1306_i2c.h"
+#include "ssd1306.h"
+#include "transmitter.h"
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////* CONST DEFINES*///////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////
+#define ANALOG_L_X 1
+#define ANALOG_L_Y 0
+#define ANALOG_R_X 3
+#define ANALOG_R_Y 4
 
+#define BATT_VOL 2
 
+#define AUX1_PIN 0
+#define AUX2_PIN 0
+#define AUX1_PORT GPIOC
+#define AUX2_PORT GPIOD
+
+#define SSD1306_128X32
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////* STRUCTURE DEFINITIONS*////////////////////////////////////
 struct MyData {
@@ -37,39 +35,31 @@ struct MyData {
   uint8_t AUX2;
 };
 /////////////////////////////////////////////////////////////////////////////////////////////
-
-
-/////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////* FUNCTION DECLARATION *////////////////////////////////////
 void resetData(void);
 void adc_init(void);
+void switches_init(void);
 uint16_t adc_get(uint8_t channel);
 uint8_t mapJoystickValues(int val, int lower, int middle, int upper, uint8_t reverse);
 /////////////////////////////////////////////////////////////////////////////////////////////
-
-
-/////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////* GLOBAL VARIABLES */////////////////////////////////////
 struct MyData data;
+extern uint8_t datapipe_address[6][5];
+uint8_t pipeOut[5] = {0xE8, 0xE8, 0xF0, 0xF0, 0xE1};
 /////////////////////////////////////////////////////////////////////////////////////////////
 
 
 int main() {
   SystemInit();
 
-#ifdef DEBUG
   UART_Init(115200); // Initialize UART at 115200 baudrate for printf override
   printf("Starting CH32V003 NRF24 Controller...\n");
-#endif /* ifdef DEBUG */
 
   adc_init();
   resetData();
 
-#ifdef NRF24
   nrf24_device(TRANSMITTER, RESET);
-#endif /* ifdef NRF24 */
 
-#ifdef OLED
   if (!ssd1306_i2c_init()) {
     ssd1306_init();
 
@@ -88,30 +78,18 @@ int main() {
     ssd1306_setbuf(0);
     ssd1306_refresh();
   }
-#endif /* ifdef OLED */
 
-#ifdef NRF24
   // Override the pipe out address to match Arduino code: 0xE8E8F0F0E1
-  extern uint8_t datapipe_address[6][5];
-  uint8_t pipeOut[5] = {0xE8, 0xE8, 0xF0, 0xF0, 0xE1};
   for(int i=0; i<5; i++) {
     datapipe_address[0][i] = pipeOut[i];
   }
-#endif /* ifdef NRF24 */
-
-
-  // Configure buttons
-  // Using PD1 for AUX1 and PD2 for AUX2 (pull-up)
-  GPIOD->CFGLR &= ~(0xff<<(4*1)); // Clear 8 bits (2 nibbles for PD1 and PD2) in the configuration register
-  GPIOD->CFGLR |= (GPIO_CNF_IN_PUPD)<<(4*1) | (GPIO_CNF_IN_PUPD)<<(4*2); // Set PD1 and PD2 to input with pull-up/pull-down mode
-  GPIOD->OUTDR |= (1<<1) | (1<<2); // Write 1 to PD1 and PD2 output data register to activate pull-up resistors
 
   while(1) {
     // You will need to configure these channel mappings to the exact pins you used:
     // A1 (PA1 - CH1), A2 (PC4 - CH2), A3 (PD2 - CH3), A4 (PD3 - CH4)
     uint16_t throttle_raw = adc_get(3); // Example: PD2 (CH3)
     uint16_t yaw_raw      = adc_get(1); // Example: PA1 (CH1)
-    uint16_t pitch_raw    = adc_get(2); // Example: PC4 (CH2)
+    uint16_t pitch_raw    = adc_get(0); // Example: PC4 (CH2)
     uint16_t roll_raw     = adc_get(4); // Example: PD3 (CH4)
 
     data.throttle = mapJoystickValues( throttle_raw, 13, 524, 1015, 1 );
@@ -119,10 +97,9 @@ int main() {
     data.pitch    = mapJoystickValues( pitch_raw,    12, 544, 1021, 1 );
     data.roll     = mapJoystickValues( roll_raw,     34, 522, 1020, 1 );
 
-    data.AUX1 = (GPIOD->INDR & (1<<1)) ? 1 : 0; // Read Port D Input Data Register for pin PD1
-    data.AUX2 = (GPIOD->INDR & (1<<2)) ? 1 : 0; // Read Port D Input Data Register for pin PD2
+    data.AUX1 = (AUX1_PORT->INDR & (1<<AUX1_PIN)) ? 1 : 0; // Read Port D Input Data Register for pin PD1
+    data.AUX2 = (AUX2_PORT->INDR & (1<<AUX2_PIN)) ? 1 : 0; // Read Port D Input Data Register for pin PD2
 
-#ifdef OLED
     // Voltage calculation (placeholder ADC channel 0 / A0 / PA2)
     uint16_t vdiv_raw = adc_get(0); // Assuming A0 is used for voltage divider
     float vol = ((vdiv_raw / 1024.0) * 10.0);
@@ -137,9 +114,7 @@ int main() {
     ssd1306_drawstr(0, 0, "Voltage:", 1);
     ssd1306_drawstr(0, 16, vol_str, 1);
     ssd1306_refresh();
-#endif /* ifdef OLED */
 
-#ifdef DEBUG
     printf("===   RAW VALUES   ===\n");
     printf("Throttle: %d\n", throttle_raw);
     printf("Yaw: %d\n",      yaw_raw);
@@ -153,13 +128,10 @@ int main() {
     printf("Pitch: %d\n",    data.pitch);
     printf("Roll: %d\n",     data.roll);
     printf("======================\n");
-#endif /* ifdef DEBUG */
 
-#ifdef NRF24
     nrf24_transmit((uint8_t*)&data, sizeof(struct MyData), NO_ACK_MODE);
-#endif /* ifdef NRF24 */
 
-    Delay_Ms(20); // ~50Hz refresh
+    Delay_Ms(2000); // ~50Hz refresh
   }
 }
 
@@ -168,7 +140,7 @@ int main() {
 void adc_init(void) {
   // ADCCLK = 24MHz / 2 = 12MHz
   RCC->CFGR0 &= ~(0x1F<<11); // Clear ADC prescaler bits in Clock Configuration Register 0
-  RCC->APB2PCENR |= RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOC | RCC_APB2Periph_GPIOD | RCC_APB2Periph_ADC1; // Enable Port A, C, D and ADC1 clocks
+  RCC->APB2PCENR |= RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOD; // Enable Port A, D and ADC1 clocks
 
   // Reset ADC1
   RCC->APB2PRSTR |= RCC_APB2Periph_ADC1; // Set ADC1 reset bit in APB2 peripheral reset register
@@ -225,4 +197,13 @@ void resetData() {
   data.roll = 127;
   data.AUX1 = 0;
   data.AUX2 = 0;
+}
+
+void switches_init(void){
+  AUX1_PORT->CFGLR &= ~(0xff<<(4*1)); // Clear 8 bits (2 nibbles for PD1 and PD2) in the configuration register
+  AUX2_PORT->CFGLR &= ~(0xff<<(4*1)); // Clear 8 bits (2 nibbles for PD1 and PD2) in the configuration register
+  AUX1_PORT->CFGLR |= (GPIO_CNF_IN_PUPD)<<(4*AUX1_PIN);
+  AUX2_PORT->CFGLR |= (GPIO_CNF_IN_PUPD)<<(4*AUX2_PIN);
+  AUX1_PORT->OUTDR |= (1<<AUX1_PIN);
+  AUX2_PORT->OUTDR |= (1<<AUX2_PIN);
 }

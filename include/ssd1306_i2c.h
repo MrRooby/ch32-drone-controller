@@ -15,10 +15,10 @@
 #define SSD1306_I2C_ADDR 0x3c
 
 // I2C Bus clock rate - must be lower the Logic clock rate
-#define SSD1306_I2C_CLKRATE 1000000
+#define SSD1306_I2C_CLKRATE 100000
 
 // I2C Logic clock rate - must be higher than Bus clock rate
-#define SSD1306_I2C_PRERATE 2000000
+#define SSD1306_I2C_PRERATE 400000
 
 // uncomment this for high-speed 36% duty cycle, otherwise 33%
 #define SSD1306_I2C_DUTY
