@@ -22,14 +22,16 @@
 #define AUX2_PORT GPIOD
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////* STRUCTURE DEFINITIONS*////////////////////////////////////
-struct MyData {
+typedef struct{
   uint8_t throttle;
   uint8_t yaw;
   uint8_t pitch;
   uint8_t roll;
   uint8_t AUX1;
   uint8_t AUX2;
-};
+} MyData;
+
+typedef
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////* FUNCTION DECLARATION *////////////////////////////////////
 void resetData(void);
@@ -39,7 +41,7 @@ uint16_t adc_get(uint8_t channel);
 uint8_t mapJoystickValues(int val, int lower, int middle, int upper, uint8_t reverse);
 /////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////* GLOBAL VARIABLES */////////////////////////////////////
-struct MyData data;
+MyData data;
 extern uint8_t datapipe_address[6][5];
 uint8_t pipeOut[5] = {0xE8, 0xE8, 0xF0, 0xF0, 0xE1};
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -125,7 +127,7 @@ int main() {
     printf("Roll: %d\n",     data.roll);
     printf("======================\n");
 
-    nrf24_transmit((uint8_t*)&data, sizeof(struct MyData), NO_ACK_MODE);
+    nrf24_transmit((uint8_t*)&data, sizeof(MyData), NO_ACK_MODE);
 
     Delay_Ms(2000); // ~50Hz refresh
   }
