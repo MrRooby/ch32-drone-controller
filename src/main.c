@@ -1,6 +1,4 @@
-#define DEBUG
-#define OLED
-#define NRF24
+#define SSD1306_128X32
 
 #include "ch32fun.h"
 #include <stdio.h>
@@ -22,8 +20,6 @@
 #define AUX2_PIN 0
 #define AUX1_PORT GPIOC
 #define AUX2_PORT GPIOD
-
-#define SSD1306_128X32
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////* STRUCTURE DEFINITIONS*////////////////////////////////////
 struct MyData {
