@@ -7,7 +7,6 @@
 #include "nrf24l01.h"
 #include "ssd1306_i2c.h"
 #include "ssd1306.h"
-#include "transmitter.h"
 #include "serial.h"
 #include "timing.h"
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -44,7 +43,7 @@ void adc_init(void);
 void oled_init(void);
 void switches_init(void);
 uint16_t adc_get(const ADC_CHANNELS channel);
-uint8_t mapJoystickValues(const int val, const int lower, const int middle, const int upper, const uint8_t reverse);
+uint8_t mapJoystickValues(const int val, const int lower, const int middle, const int upper, const bool reverse);
 void printDebugToSerial(const MyData *pdata);
 void oledSetBuffer(void);
 void updateData(MyData *pdata);
@@ -58,7 +57,8 @@ extern uint8_t datapipe_address[6][5];
 uint8_t pipeOut[5] = {0xE8, 0xE8, 0xF0, 0xF0, 0xE1};
 uint32_t showtime = 0;
 uint32_t start = 0;
-uint32_t last_oled_time = 0;
+uint32_t last_oled_update = 0;
+uint32_t last_transmit = 0;
 /////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -66,6 +66,8 @@ int main(void) {
   SystemInit();
   UART_Init(115200);
   printf("Starting CH32V003 NRF24 Controller...\n");
+  data.AUX1 = 0;
+  data.AUX2 = 0;
   
   adc_init();
   resetData();
@@ -76,30 +78,36 @@ int main(void) {
 
   oled_init();
 
+  printDebugToSerial(&data);
   // Override the pipe out address to match Arduino code: 0xE8E8F0F0E1
   for(int i=0; i<5; i++) {
     datapipe_address[0][i] = pipeOut[i];
   }
-
 
   while(1) {
     uint32_t start = millis();
 
     updateData(&data);
 
-    if(millis() - last_oled_time > OLED_REFRESH_MS){
-      if (DMA1_Channel6->CNTR == 0) {
-        oledSetBuffer();          // Przygotowuje bufor
-        oledRefreshBufferDma();   // Wysyła w tle
-        last_oled_time = millis();
-      }
+    if(millis() - last_transmit > LOOP_TIME_MS){
+      data.AUX1 = 0;
+      data.AUX2 = 0;
+      nrf24_transmit((uint8_t*)&data, sizeof(MyData), NO_ACK_MODE);
+      last_transmit = millis();
     }
 
-    nrf24_transmit((uint8_t*)&data, sizeof(MyData), NO_ACK_MODE);
-
-    while(millis() - start < LOOP_TIME_MS);
-    uint32_t elapsed = millis() - start;
-    printf("Elapsed time %lu\n\r", elapsed);
+    if(millis() - last_oled_update > 10){
+      printDebugToSerial(&data);
+      last_oled_update = millis();
+    }
+    // // OLED REFRESH LOOP
+    // if(millis() - last_oled_time > OLED_REFRESH_MS){
+    //   if (DMA1_Channel6->CNTR == 0) {
+    //     last_oled_time = millis();
+    //     oledSetBuffer();          // Przygotowuje bufor
+    //     ssd1306_refresh_inplace_dma(ssd1306_buffer, 512);
+    //   }
+    // }
   }
 }
 
@@ -107,43 +115,43 @@ int main(void) {
 /////////////////////////////////* FUNCTION DEFINITIONS *////////////////////////////////////
 void adc_init(void) {
   // ADCCLK = 24MHz / 2 = 12MHz
-  RCC->CFGR0 &= ~(0x1F<<11); // Clear ADC prescaler bits in Clock Configuration Register 0
+  RCC->CFGR0 &= ~(0x1F<<11);                                                           // Clear ADC prescaler bits in Clock Configuration Register 0
   RCC->APB2PCENR |= RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOD | RCC_APB2Periph_ADC1; // Enable Port A, D and ADC1 clocks
 
   // Reset ADC1
-  RCC->APB2PRSTR |= RCC_APB2Periph_ADC1; // Set ADC1 reset bit in APB2 peripheral reset register
-  RCC->APB2PRSTR &= ~RCC_APB2Periph_ADC1; // Clear ADC1 reset bit
+  RCC->APB2PRSTR |= RCC_APB2Periph_ADC1;                                               // Set ADC1 reset bit in APB2 peripheral reset register
+  RCC->APB2PRSTR &= ~RCC_APB2Periph_ADC1;                                              // Clear ADC1 reset bit
 
-  ADC1->RSQR1 = 0; // Clear Regular Sequence Register 1 (setting 1 conversion)
-  ADC1->RSQR2 = 0; // Clear Regular Sequence Register 2
+  ADC1->RSQR1 = 0;                                                                     // Clear Regular Sequence Register 1 (setting 1 conversion)
+  ADC1->RSQR2 = 0;                                                                     // Clear Regular Sequence Register 2
 
   // Turn on ADC and enable software triggering
-  ADC1->CTLR2 |= ADC_ADON | ADC_EXTSEL; // Set ADON (A/D Converter ON) and EXTSEL (External Event Select) bits in Control Register 2
+  ADC1->CTLR2 |= ADC_ADON | ADC_EXTSEL;                                                // Set ADON (A/D Converter ON) and EXTSEL (External Event Select) bits in Control Register 2
 
   // Reset Calibration
-  ADC1->CTLR2 |= ADC_RSTCAL; // Set Reset Calibration bit
-  while(ADC1->CTLR2 & ADC_RSTCAL); // Wait until Reset Calibration bit is cleared by hardware
+  ADC1->CTLR2 |= ADC_RSTCAL;                                                           // Set Reset Calibration bit
+  while(ADC1->CTLR2 & ADC_RSTCAL);                                                     // Wait until Reset Calibration bit is cleared by hardware
 
   // Calibrate
-  ADC1->CTLR2 |= ADC_CAL; // Set A/D Calibration bit
-  while(ADC1->CTLR2 & ADC_CAL); // Wait until A/D Calibration is complete (bit cleared by hardware)
+  ADC1->CTLR2 |= ADC_CAL;                                                              // Set A/D Calibration bit
+  while(ADC1->CTLR2 & ADC_CAL);                                                        // Wait until A/D Calibration is complete (bit cleared by hardware)
 }
 
 uint16_t adc_get(const ADC_CHANNELS channel) {
-  ADC1->RSQR3 = channel; // Set the 1st conversion in regular sequence register 3 to the chosen channel
+  ADC1->RSQR3 = channel;                                                               // Set the 1st conversion in regular sequence register 3 to the chosen channel
 
   // Set sampling time for channel to longest (239.5 cycles)
   if (channel < 10) {
-    ADC1->SAMPTR2 &= ~(ADC_SMP0<<(3*channel)); // Clear sample time bits for the specific channel in Sample time register 2
-    ADC1->SAMPTR2 |= 7<<(3*channel);  // Set sample time bits to 111 (239.5 cycles) for the specific channel
+    ADC1->SAMPTR2 &= ~(ADC_SMP0<<(3*channel));                                         // Clear sample time bits for the specific channel in Sample time register 2
+    ADC1->SAMPTR2 |= 7<<(3*channel);                                                   // Set sample time bits to 111 (239.5 cycles) for the specific channel
   }
 
-  ADC1->CTLR2 |= ADC_SWSTART; // Set Start Conversion of regular channels bit inside Control Register 2
-  while(!(ADC1->STATR & ADC_EOC)); // Wait until End Of Conversion bit is set in Status Register
-  return ADC1->RDATAR; // Return the 16-bit converted data from Regular Data Register
+  ADC1->CTLR2 |= ADC_SWSTART;                                                          // Set Start Conversion of regular channels bit inside Control Register 2
+  while(!(ADC1->STATR & ADC_EOC));                                                     // Wait until End Of Conversion bit is set in Status Register
+  return ADC1->RDATAR;                                                                 // Return the 16-bit converted data from Regular Data Register
 }
 
-uint8_t mapJoystickValues(int val, const int lower, const int middle, const int upper, const uint8_t reverse){
+uint8_t mapJoystickValues(int val, const int lower, const int middle, const int upper, const bool reverse){
   if (val < lower) val = lower;
   if (val > upper) val = upper;
 
@@ -196,10 +204,10 @@ void printDebugToSerial(const MyData *pdata){
 }
 
 void updateData(MyData *pdata){
-  pdata->throttle = mapJoystickValues( adc_get(L_Y), 13, 524, 1015, 1 );
-  pdata->yaw      = mapJoystickValues( adc_get(L_X), 50, 505, 1020, 1 );
-  pdata->pitch    = mapJoystickValues( adc_get(R_Y), 12, 544, 1021, 1 );
-  pdata->roll     = mapJoystickValues( adc_get(R_X), 34, 522, 1020, 1 );
+  pdata->throttle = mapJoystickValues( adc_get(L_X), 0, 512, 1023, 0 );
+  pdata->yaw      = mapJoystickValues( adc_get(L_Y), 0, 512, 1024, 0 );
+  pdata->pitch    = mapJoystickValues( adc_get(R_Y), 0, 512, 1024, 1 );
+  pdata->roll     = mapJoystickValues( adc_get(R_X), 0, 512, 1024, 1 );
   pdata->AUX1     = (AUX1_PORT->INDR & (1<<AUX1_PIN)) ? 1 : 0; // Read Port D Input Data Register for pin PD1
   pdata->AUX2     = (AUX2_PORT->INDR & (1<<AUX2_PIN)) ? 1 : 0; // Read Port D Input Data Register for pin PD2
 }
@@ -218,42 +226,62 @@ void oledSetBuffer(void){
   ssd1306_setbuf(0);
   ssd1306_drawstr(0, 0, "Voltage:", 1);
   ssd1306_drawstr(80, 0, vol_str, 1);
-  ssd1306_refresh();
 }
 
 void init_i2c_dma(void) {
   RCC->AHBPCENR |= RCC_AHBPeriph_DMA1;
-
   DMA1_Channel6->PADDR = (uint32_t)&I2C1->DATAR;
   DMA1_Channel6->MADDR = (uint32_t)ssd1306_buffer;
-  DMA1_Channel6->CFGR = DMA_CFGR3_DIR | DMA_CFGR1_MINC | DMA_CFGR2_PL_1;
-
-  I2C1->CTLR2 |= I2C_CTLR2_DMAEN;
-}
-
-void oledRefreshBufferDma(void) {
-  // Czekaj na wolną magistralę
-  while(I2C1->STAR2 & I2C_STAR2_BUSY);
-
-  I2C1->CTLR1 |= I2C_CTLR1_START;
-  while(!(I2C1->STAR1 & I2C_STAR1_SB));
-
-  I2C1->DATAR = (0x3C << 1);
-  while(!(I2C1->STAR1 & I2C_STAR1_ADDR));
-  (void)I2C1->STAR1; (void)I2C1->STAR2; // Czyszczenie flagi ADDR
-
-  I2C1->DATAR = 0x40; // Control byte: data stream
-  while(!(I2C1->STAR1 & I2C_STAR1_BTF));
-
-  // Konfiguracja i start DMA
-  DMA1_Channel6->CFGR &= ~DMA_CFGR1_EN;
-  DMA1_Channel6->CNTR = sizeof(ssd1306_buffer);
-  DMA1_Channel6->MADDR = (uint32_t)ssd1306_buffer;
-  DMA1_Channel6->CFGR |= DMA_CFGR1_EN;
+  DMA1_Channel6->CFGR = DMA_CFGR3_DIR | DMA_CFGR1_MINC;
 }
 
 void setBuffLineCentered(char *pmsg, int y){
   int len = strlen(pmsg);
   int x = (128 - (len * 8)) / 2; // Dla czcionki 8px szerokości
   ssd1306_drawstr(x, y, pmsg, 1);
+}
+
+void oledRefreshBufferDma(void) {
+    // 1. Upewnij się, że poprzedni transfer się skończył
+    while(DMA1_Channel6->CNTR > 0);
+    while(I2C1->STAR2 & I2C_STAR2_BUSY);
+
+    // 2. Musimy wysłać komendy ustawiające okno rysowania (tak jak w oryginale)
+    // SSD1306_COLUMNADDR (0x21), potem 0 i 127
+    // SSD1306_PAGEADDR (0x22), potem 0 i 7 (lub 3 dla ekranu 32px)
+    uint8_t setup_cmds[] = {
+        0x00, 0x21, 0, 127, // Set Column Address
+        0x22, 0, 3          // Set Page Address (0-3 dla 128x32)
+    };
+
+    // Wysyłamy komendy blokująco (to tylko kilka bajtów, nie spowolni drona)
+    for(int i=0; i<sizeof(setup_cmds); i++) {
+        I2C1->CTLR1 |= I2C_CTLR1_START;
+        while(!(I2C1->STAR1 & I2C_STAR1_SB));
+        I2C1->DATAR = (0x3C << 1);
+        while(!(I2C1->STAR1 & I2C_STAR1_ADDR));
+        (void)I2C1->STAR1; (void)I2C1->STAR2;
+        
+        I2C1->DATAR = 0x00; // Co - bit (Command)
+        while(!(I2C1->STAR1 & I2C_STAR1_TXE));
+        I2C1->DATAR = setup_cmds[i];
+        while(!(I2C1->STAR1 & I2C_STAR1_BTF));
+        I2C1->CTLR1 |= I2C_CTLR1_STOP;
+    }
+
+    // 3. Teraz przygotowujemy start DMA dla danych (0x40)
+    I2C1->CTLR1 |= I2C_CTLR1_START;
+    while(!(I2C1->STAR1 & I2C_STAR1_SB));
+    I2C1->DATAR = (0x3C << 1);
+    while(!(I2C1->STAR1 & I2C_STAR1_ADDR));
+    (void)I2C1->STAR1; (void)I2C1->STAR2;
+
+    I2C1->DATAR = 0x40; // Rozpoczynamy strumień danych
+    while(!(I2C1->STAR1 & I2C_STAR1_TXE));
+
+    // 4. Odpalamy DMA
+    DMA1_Channel6->CFGR &= ~DMA_CFGR1_EN;
+    DMA1_Channel6->CNTR = sizeof(ssd1306_buffer);
+    DMA1_Channel6->MADDR = (uint32_t)ssd1306_buffer;
+    DMA1_Channel6->CFGR |= DMA_CFGR1_EN;
 }

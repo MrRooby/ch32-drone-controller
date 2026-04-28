@@ -38,6 +38,60 @@ volatile uint8_t ssd1306_i2c_send_buffer[64], *ssd1306_i2c_send_ptr, ssd1306_i2c
 #endif
 
 /*
+ * DMA-based full buffer refresh for SSD1306
+ * Use static inline to ensure it compiles into your object files correctly
+ */
+static inline void ssd1306_refresh_inplace_dma(const uint8_t *buffer, uint16_t sz)
+{
+  // 1. Cleanup previous transfer if it finished while we were away
+  if (DMA1_Channel3->CFGR & DMA_CFGR_EN)
+  {
+    if (DMA1->INTFR & DMA1_INTFR_TCIF3)
+    {
+      // Ensure last byte physically left the I2C hardware
+      while(!(I2C1->STAR1 & I2C_STAR1_BTF));
+
+      I2C1->CTLR1 |= I2C_CTLR1_STOP;
+      DMA1_Channel3->CFGR &= ~DMA_CFGR_EN;
+      DMA1->INTFCR = DMA1_INTFCR_CTCIF3;
+      I2C1->CTLR2 &= ~I2C_CTLR2_DMAEN;
+    }
+    else
+    {
+      // Still busy; skip update
+      return;
+    }
+  }
+
+  // 2. Start new I2C transaction
+  while(I2C1->STAR2 & I2C_STAR2_BUSY);
+
+  I2C1->CTLR1 |= I2C_CTLR1_START;
+  while(!ssd1306_i2c_chk_evt(SSD1306_I2C_EVENT_MASTER_MODE_SELECT));
+
+  I2C1->DATAR = SSD1306_I2C_ADDR << 1;
+  while(!ssd1306_i2c_chk_evt(SSD1306_I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED));
+
+  // 3. Send the SSD1306 'Data' control byte (0x40)
+  I2C1->DATAR = 0x40;
+  while(!(I2C1->STAR1 & I2C_STAR1_TXE));
+
+  // 4. Configure DMA
+  RCC->AHBPCENR |= RCC_AHBPCENR_DMA1EN;
+
+  DMA1_Channel3->PADDR = (uint32_t)&I2C1->DATAR;
+  DMA1_Channel3->MADDR = (uint32_t)buffer;
+  DMA1_Channel3->CNTR  = sz;
+
+  // Memory to Peripheral, Memory Increment, High Priority
+  DMA1_Channel3->CFGR = DMA_CFGR_DIR | DMA_CFGR_MINC | DMA_CFGR_PL_1;
+
+  I2C1->CTLR2 |= I2C_CTLR2_DMAEN;
+  DMA1_Channel3->CFGR |= DMA_CFGR_EN;
+}
+
+
+/*
  * init just I2C
  */
 void ssd1306_i2c_setup(void)
