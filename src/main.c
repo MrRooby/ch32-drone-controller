@@ -16,7 +16,7 @@
 #define AUX2_PIN 0
 #define AUX1_PORT GPIOC
 #define AUX2_PORT GPIOD
-#define LOOP_TIME_MS 0
+#define LOOP_TIME_MS 20
 #define OLED_REFRESH_MS 50
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////* STRUCTURE DEFINITIONS*////////////////////////////////////
@@ -46,10 +46,11 @@ void switches_init(void);
 uint16_t adc_get(const ADC_CHANNELS channel);
 uint8_t mapJoystickValues(const int val, const int lower, const int middle, const int upper, const uint8_t reverse);
 void printDebugToSerial(const MyData *pdata);
-void oledBatteryVoltage(void);
+void oledSetBuffer(void);
 void updateData(MyData *pdata);
-void oled_refresh_dma(void);
 void init_i2c_dma(void);
+void oledRefreshBufferDma(void);
+void setBuffLineCentered(char *pmsg, int y);
 /////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////* GLOBAL VARIABLES */////////////////////////////////////
 MyData data;
@@ -80,6 +81,7 @@ int main(void) {
     datapipe_address[0][i] = pipeOut[i];
   }
 
+
   while(1) {
     uint32_t start = millis();
 
@@ -87,9 +89,9 @@ int main(void) {
 
     if(millis() - last_oled_time > OLED_REFRESH_MS){
       if (DMA1_Channel6->CNTR == 0) {
+        oledSetBuffer();          // Przygotowuje bufor
+        oledRefreshBufferDma();   // Wysyła w tle
         last_oled_time = millis();
-        oledBatteryVoltage(); // Przygotowuje bufor
-        oled_refresh_dma();   // Wysyła w tle
       }
     }
 
@@ -177,21 +179,10 @@ void switches_init(void){
 void oled_init(void){
   if (!ssd1306_i2c_init()) {
     ssd1306_init();
-
-    ssd1306_setbuf(0);
-    ssd1306_drawstr(8, 0, "RISCy", 1);
-    ssd1306_drawstr(0, 16, "Transmitter", 1);
+    setBuffLineCentered("RISCY", 4);
+    setBuffLineCentered("TRANSMITTER", 20);
     ssd1306_refresh();
-    Delay_Ms(1200);
-
-    ssd1306_setbuf(0);
-    ssd1306_drawstr(0, 0, "KOCHAC PAPIEZA", 1);
-    ssd1306_drawstr(0, 16, "Mini FPV Drone", 1);
-    ssd1306_refresh();
-    Delay_Ms(2200);
-
-    ssd1306_setbuf(0);
-    ssd1306_refresh();
+    Delay_Ms(2000);
   }
 }
 
@@ -213,7 +204,7 @@ void updateData(MyData *pdata){
   pdata->AUX2     = (AUX2_PORT->INDR & (1<<AUX2_PIN)) ? 1 : 0; // Read Port D Input Data Register for pin PD2
 }
 
-void oledBatteryVoltage(void){
+void oledSetBuffer(void){
   // Voltage calculation (placeholder ADC channel 0 / A0 / PA2)
   uint16_t vdiv_raw = adc_get(BAT_VOL); // Assuming A0 is used for voltage divider
   float vol = ((vdiv_raw / 1024.0) * 10.0);
@@ -226,40 +217,43 @@ void oledBatteryVoltage(void){
 
   ssd1306_setbuf(0);
   ssd1306_drawstr(0, 0, "Voltage:", 1);
-  ssd1306_drawstr(0, 16, vol_str, 1);
+  ssd1306_drawstr(80, 0, vol_str, 1);
   ssd1306_refresh();
 }
 
-// Poprawiona inicjalizacja - dopasowana do nazw w ch32fun
 void init_i2c_dma(void) {
-    RCC->AHBPCENR |= RCC_AHBPeriph_DMA1;
-    
-    DMA1_Channel6->PADDR = (uint32_t)&I2C1->DATAR;
-    DMA1_Channel6->MADDR = (uint32_t)ssd1306_buffer;
-    // W ch32fun używamy nazw z cyframi dla konkretnych bitów, jeśli ogólne nie są zdefiniowane
-    DMA1_Channel6->CFGR = DMA_CFGR3_DIR | DMA_CFGR1_MINC | DMA_CFGR2_PL_1;
-    
-    I2C1->CTLR2 |= I2C_CTLR2_DMAEN;
+  RCC->AHBPCENR |= RCC_AHBPeriph_DMA1;
+
+  DMA1_Channel6->PADDR = (uint32_t)&I2C1->DATAR;
+  DMA1_Channel6->MADDR = (uint32_t)ssd1306_buffer;
+  DMA1_Channel6->CFGR = DMA_CFGR3_DIR | DMA_CFGR1_MINC | DMA_CFGR2_PL_1;
+
+  I2C1->CTLR2 |= I2C_CTLR2_DMAEN;
 }
 
-// Funkcja odświeżania bez argumentów (używa globalnego bufora biblioteki)
-void oled_refresh_dma(void) {
-    // Czekaj na wolną magistralę
-    while(I2C1->STAR2 & I2C_STAR2_BUSY);
-    
-    I2C1->CTLR1 |= I2C_CTLR1_START;
-    while(!(I2C1->STAR1 & I2C_STAR1_SB));
-    
-    I2C1->DATAR = (0x3C << 1);
-    while(!(I2C1->STAR1 & I2C_STAR1_ADDR));
-    (void)I2C1->STAR1; (void)I2C1->STAR2; // Czyszczenie flagi ADDR
+void oledRefreshBufferDma(void) {
+  // Czekaj na wolną magistralę
+  while(I2C1->STAR2 & I2C_STAR2_BUSY);
 
-    I2C1->DATAR = 0x40; // Control byte: data stream
-    while(!(I2C1->STAR1 & I2C_STAR1_BTF));
+  I2C1->CTLR1 |= I2C_CTLR1_START;
+  while(!(I2C1->STAR1 & I2C_STAR1_SB));
 
-    // Konfiguracja i start DMA
-    DMA1_Channel6->CFGR &= ~DMA_CFGR1_EN;
-    DMA1_Channel6->CNTR = sizeof(ssd1306_buffer);
-    DMA1_Channel6->MADDR = (uint32_t)ssd1306_buffer;
-    DMA1_Channel6->CFGR |= DMA_CFGR1_EN;
+  I2C1->DATAR = (0x3C << 1);
+  while(!(I2C1->STAR1 & I2C_STAR1_ADDR));
+  (void)I2C1->STAR1; (void)I2C1->STAR2; // Czyszczenie flagi ADDR
+
+  I2C1->DATAR = 0x40; // Control byte: data stream
+  while(!(I2C1->STAR1 & I2C_STAR1_BTF));
+
+  // Konfiguracja i start DMA
+  DMA1_Channel6->CFGR &= ~DMA_CFGR1_EN;
+  DMA1_Channel6->CNTR = sizeof(ssd1306_buffer);
+  DMA1_Channel6->MADDR = (uint32_t)ssd1306_buffer;
+  DMA1_Channel6->CFGR |= DMA_CFGR1_EN;
+}
+
+void setBuffLineCentered(char *pmsg, int y){
+  int len = strlen(pmsg);
+  int x = (128 - (len * 8)) / 2; // Dla czcionki 8px szerokości
+  ssd1306_drawstr(x, y, pmsg, 1);
 }
