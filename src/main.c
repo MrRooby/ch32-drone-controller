@@ -84,14 +84,19 @@ int main(void) {
     datapipe_address[0][i] = pipeOut[i];
   }
 
+  data.pitch= 0;
+  data.throttle= 0;
+  data.yaw = 0;
+  data.roll = 0;
+  data.AUX1 = 0;
+  data.AUX2 = 0;
+
   while(1) {
     uint32_t start = millis();
 
     updateData(&data);
 
     if(millis() - last_transmit > LOOP_TIME_MS){
-      data.AUX1 = 0;
-      data.AUX2 = 0;
       nrf24_transmit((uint8_t*)&data, sizeof(MyData), NO_ACK_MODE);
       last_transmit = millis();
     }
