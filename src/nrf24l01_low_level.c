@@ -1,5 +1,9 @@
 #include "ch32fun.h"
 
+#define CSN_PORT GPIOC
+#define CE_PORT  GPIOC
+#define CSN_PIN  3
+#define CE_PIN   4
 
 #define CH32V003_SPI_SPEED_HZ 1000000
 #define CH32V003_SPI_DIRECTION_2LINE_TXRX
@@ -28,26 +32,26 @@ void SPI_Initializer()
 /*contains all CSN and CE pins gpio configurations, including setting them as gpio outputs and turning SPI off and CE '1'*/
 void pinout_Initializer()
 {
-	// CSN on PC0
-	GPIOC->CFGLR &= ~(0xf<<(4*3));
-	GPIOC->CFGLR |= (GPIO_Speed_10MHz | GPIO_CNF_OUT_PP)<<(4*3);
+	// CSN on PC3
+	CSN_PORT->CFGLR &= ~(0xf<<(4*CSN_PIN));
+	CSN_PORT->CFGLR |= (GPIO_Speed_10MHz | GPIO_CNF_OUT_PP)<<(4*CSN_PIN);
 	// CSN high
-	GPIOC->BSHR = (1<<3);
+	CSN_PORT->BSHR = (1<<CSN_PIN);
 	// CE on PC4
-	GPIOC->CFGLR &= ~(0xf<<(4*0));
-	GPIOC->CFGLR |= (GPIO_Speed_10MHz | GPIO_CNF_OUT_PP)<<(4*0);
+	CE_PORT->CFGLR &= ~(0xf<<(4*CE_PIN));
+	CE_PORT->CFGLR |= (GPIO_Speed_10MHz | GPIO_CNF_OUT_PP)<<(4*CE_PIN);
 	// CE HIGH
-	GPIOC->BSHR = (1<<0);
+	CE_PORT->BSHR = (1<<CE_PIN);
 }
 
 /*CSN pin manipulation to high or low (SPI on or off)*/
 void nrf24_SPI(uint8_t input)
 {
 	if (input > 0) {
-		GPIOC->BSHR = (1<<(0+3));
+		CSN_PORT->BSHR = (1<<(0+CSN_PIN));
 	}
 	else {
-		GPIOC->BSHR = (1<<(16+3));
+		CSN_PORT->BSHR = (1<<(16+CSN_PIN));
 	}
 }
 
@@ -61,9 +65,9 @@ uint8_t SPI_send_command(uint8_t command)
 void nrf24_CE(uint8_t input)
 {
 	if (input > 0) {
-		GPIOC->BSHR = (1<<(0+0));
+		CE_PORT->BSHR = (1<<(0+CE_PIN));
 	}
 	else {
-		GPIOC->BSHR = (1<<(16+0));
+		CE_PORT->BSHR = (1<<(16+CE_PIN));
 	}
 }

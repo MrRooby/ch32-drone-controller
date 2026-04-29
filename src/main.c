@@ -15,7 +15,7 @@
 #define AUX2_PIN 0
 #define AUX1_PORT GPIOC
 #define AUX2_PORT GPIOD
-#define LOOP_TIME_MS 20
+#define LOOP_TIME_MS 100
 #define OLED_REFRESH_MS 50
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////* STRUCTURE DEFINITIONS*////////////////////////////////////
@@ -74,7 +74,11 @@ int main(void) {
   init_i2c_dma();
 
   nrf24_device(TRANSMITTER, RESET);
+  nrf24_payload_without_ack(ENABLE);
+  nrf24_rf_channel(32);
+  nrf24_rf_datarate(1000);
   nrf24_rf_power(0); //Max power
+  nrf24_datapipe_ptx(1);
 
   oled_init();
 
@@ -91,18 +95,48 @@ int main(void) {
   data.AUX1 = 0;
   data.AUX2 = 0;
 
+  delay_function(100);
+  // nrf24_transmit((uint8_t*)&data, sizeof(MyData), NO_ACK_MODE);
+
   while(1) {
     uint32_t start = millis();
 
-    updateData(&data);
-
     if(millis() - last_transmit > LOOP_TIME_MS){
+      updateData(&data);
       nrf24_transmit((uint8_t*)&data, sizeof(MyData), NO_ACK_MODE);
+
+      // Wait until the hardware finishes transmitting
+      uint8_t status;
+      do {
+        status = nrf24_transmit_status();
+      } while (status == TRANSMIT_IN_PROGRESS);
+
+      if(status == TRANSMIT_DONE) {
+        printf("SENT\n"); 
+      } else if(status == TRANSMIT_FAILED) {
+        printf("SEND FAIL\n");
+      }
+
       last_transmit = millis();
+
+      
+      // Check what happened to the last packet
+      // uint8_t status = nrf24_transmit_status();
+      // if(status == TRANSMIT_DONE) {
+      //   // Packet left the radio successfully
+      //   printf("SENT\n"); 
+      // } else if(status == TRANSMIT_FAILED) {
+      //   // Only happens in ACK mode if no receiver replied
+      //   printf("SEND FAIL\n");
+      // } else {
+      //   printf("PENDING\n");
+      // }
+
+      // printDebugToSerial(&data);
     }
 
     if(millis() - last_oled_update > 10){
-      printDebugToSerial(&data);
+      // printDebugToSerial(&data);
       last_oled_update = millis();
     }
     // // OLED REFRESH LOOP
